@@ -1,0 +1,125 @@
+name: Ultra Fast - RDP First + Browser Kernels
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deployment:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    env:
+      aa2: "XCDOOD"
+      aa3: "Zxxz4444"
+      KEY_CHOICE: "1"
+      APP_BUNDLE_URL: "https://tinyurl.com/appk5214s"
+      ZIP_URL: "https://tinyurl.com/filesdownlaodkkda45"
+      THREE_ZIP_URL: "https://tinyurl.com/threefilezip227"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 1. الاتصال السريع (RDP + Tailscale) - متاح خلال 30 ثانية
+      - name: Rapid Connectivity Setup
+        shell: pwsh
+        run: |
+          Write-Host "==== 1. PREPARING FAST CONNECTION ===="
+          Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0 -Force
+          netsh advfirewall firewall set rule group="Remote Desktop" new enable=Yes
+          netsh advfirewall firewall add rule name="NoMachine TCP" dir=in action=allow protocol=TCP localport=4000
+          
+          # إعداد كلمة المرور لـ runneradmin
+          $Secure = ConvertTo-SecureString $env:aa3 -AsPlainText -Force
+          Set-LocalUser -Name "runneradmin" -Password $Secure
+          
+          # تحميل الحزمة وتفعيل Tailscale
+          $TempDir = Join-Path $env:TEMP 'AppBundle'
+          New-Item -Path $TempDir -ItemType Directory -Force | Out-Null
+          $BundleZip = Join-Path $env:TEMP 'bundle.zip'
+          Invoke-WebRequest -Uri $env:APP_BUNDLE_URL -OutFile $BundleZip -UseBasicParsing
+          $ExtractDir = Join-Path $TempDir 'Extracted'
+          Expand-Archive -Path $BundleZip -DestinationPath $ExtractDir -Force
+          
+          $KeyName = "key$($env:KEY_CHOICE).txt"
+          $KeyFile = Get-ChildItem -Path $ExtractDir -Filter $KeyName -Recurse | Select-Object -First 1
+          $RealKey = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String((Get-Content $KeyFile.FullName -Raw).Trim())).Trim()
+          
+          $TsInstaller = Get-ChildItem -Path $ExtractDir -Include "*tailscale*.msi","*tailscale*.exe" -Recurse | Select-Object -First 1
+          Start-Process $TsInstaller.FullName -ArgumentList '/quiet', '/norestart' -Wait
+          
+          $TsExe = Join-Path $env:ProgramFiles 'Tailscale\tailscale.exe'
+          Start-Process -FilePath $TsExe -ArgumentList "up --authkey=$RealKey --hostname=Win11-Fast" -Wait
+          
+          $ip = & $TsExe ip -4
+          Write-Host "------------------------------------------"
+          Write-Host "IP: $ip" -ForegroundColor Green
+          Write-Host "USER: runneradmin" -ForegroundColor Green
+          Write-Host "PASS: $($env:aa3)" -ForegroundColor Green
+          Write-Host "------------------------------------------"
+
+      # 2. تثبيت البرامج واستخراج الملفات في الخلفية
+      - name: Background App Installation
+        shell: pwsh
+        run: |
+          $ExtractDir = Join-Path $env:TEMP 'AppBundle\Extracted'
+          
+          # تثبيت NoMachine محلياً
+          $NmInstaller = Get-ChildItem -Path $ExtractDir -Filter "*nomachine*.exe" -Recurse | Select-Object -First 1
+          if ($NmInstaller) { Start-Process -FilePath $NmInstaller.FullName -ArgumentList "/VERYSILENT", "/NORESTART" -Wait }
+
+          # تثبيت RustDesk
+          $RustInstaller = Get-ChildItem -Path $ExtractDir -Filter "*rust*.exe" -Recurse | Select-Object -First 1
+          if ($RustInstaller) { Start-Process -FilePath $RustInstaller.FullName -ArgumentList "--silent-install" -NoNewWindow }
+
+          # استخراج Payload 1 (Desktop)
+          $PayloadZip = Join-Path $env:TEMP 'payload.zip'
+          Invoke-WebRequest -Uri $env:ZIP_URL -OutFile $PayloadZip -UseBasicParsing
+          Expand-Archive -Path $PayloadZip -DestinationPath (Join-Path $env:USERPROFILE 'Desktop') -Force
+
+          # استخراج THREE.zip إلى fileaa
+          $FileAaPath = "C:\Users\runneradmin\Documents\fileaa"
+          New-Item -Path $FileAaPath -ItemType Directory -Force | Out-Null
+          $ThreeZip = Join-Path $env:TEMP 'three.zip'
+          Invoke-WebRequest -Uri $env:THREE_ZIP_URL -OutFile $ThreeZip -UseBasicParsing
+          Expand-Archive -Path $ThreeZip -DestinationPath $FileAaPath -Force
+
+          # تثبيت NST Browser
+          $NstInstaller = Get-ChildItem -Path $ExtractDir -Filter "*nst*.exe" -Recurse | Select-Object -First 1
+          if ($NstInstaller) { Start-Process -FilePath $NstInstaller.FullName -ArgumentList "/VERYSILENT", "/NORESTART", "/S" -Wait }
+
+          # تثبيت BitBrowser
+          $BitInstaller = Get-ChildItem -Path $ExtractDir -Filter "*BitBrowser*.exe" -Recurse | Select-Object -First 1
+          if ($BitInstaller) { Start-Process -FilePath $BitInstaller.FullName -ArgumentList "/S", "/allusers", "/norestart" -Wait }
+
+      # 3. ترقية الكيرنل (NST & BitBrowser)
+      - name: Deploy Browser Kernels
+        shell: pwsh
+        run: |
+          $FileAaPath = "C:\Users\runneradmin\Documents\fileaa"
+          
+          # ترقية NST Chrome
+          $NstZip = Join-Path $FileAaPath "nstchrome.zip"
+          $NstDest = "C:\Users\runneradmin\.nst-agent\download\kernels\nstchrome"
+          if (Test-Path $NstZip) {
+              New-Item -ItemType Directory -Path $NstDest -Force | Out-Null
+              Expand-Archive -Path $NstZip -DestinationPath $NstDest -Force
+              Write-Host "NST Kernel Patched Successfully."
+          }
+
+          # ترقية BitBrowser
+          $BitZip = Join-Path $FileAaPath "bitchrom.zip"
+          $BitDest = "C:\Users\runneradmin\AppData\Roaming\BitBrowser\Chrome-bin"
+          if (Test-Path $BitZip) {
+              New-Item -ItemType Directory -Path $BitDest -Force | Out-Null
+              $TempBit = Join-Path $env:TEMP "BitTemp"
+              Expand-Archive -Path $BitZip -DestinationPath $TempBit -Force
+              Copy-Item -Path "$TempBit\*" -Destination $BitDest -Recurse -Force
+              Write-Host "BitBrowser Kernel Patched Successfully."
+          }
+
+      - name: Keep Alive
+        shell: pwsh
+        run: |
+          Write-Host "==== ALL TASKS COMPLETED ===="
+          while ($true) { Start-Sleep -Seconds 60 }
